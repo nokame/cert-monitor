@@ -31,14 +31,53 @@ waitress-serve --host=0.0.0.0 --port=5000 app:app
 
 Dashboard : http://localhost:5000
 
-### Sur Windows Server 2019/2022 (recommandé pour l'agent ACME)
+### Sur Windows Server 2019/2022 (recommandé pour l'agent ACME) — script all-in-one
 
-1. Installez Python 3 et lancez l'application sur le serveur IIS lui-même.
-2. Exécutez-le en service (NSSM, `sc.exe` ou tâche planifiée « au démarrage ») :
-   ```
-   nssm install CertMonitor "C:\path\to\.venv\Scripts\python.exe" "C:\path\to\cert-monitor\run.py"
-   ```
-3. Le process doit tourner avec des droits suffisants pour `Import-PfxCertificate` et `WebAdministration` (compte administrateur ou LOCAL SYSTEM).
+Copiez le dossier du projet sur le serveur puis, dans une console PowerShell **administrateur** :
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\install.ps1 \
+  -SmtpHost smtp.exemple.com -SmtpPort 587 \
+  -SmtpUser alertes@exemple.com -SmtpPassword "motdepasse" \
+  -MailFrom alertes@exemple.com -MailTo "admin@exemple.com,dsi@exemple.com" \
+  -AcmeEmail admin@exemple.com \
+  -AcmeWebroot "C:\inetpub\wwwroot" \
+  -AcmeChallengeMode webroot \
+  -AcmeStaging
+```
+
+Le script effectue tout : vérification des prérequis (OS, IIS), installation silencieuse de Python 3.12 si absent, environnement virtuel + dépendances, **génération du `.env` à partir des arguments**, règles de pare-feu, service Windows (NSSM téléchargé automatiquement, repli sur tâche planifiée SYSTEM au démarrage), démarrage et test de santé.
+
+Paramètres principaux :
+
+| Paramètre | Défaut | Rôle |
+|---|---|---|
+| `-InstallDir` | `C:\cert-monitor` | Dossier d'installation |
+| `-Port` | `5000` | Port du dashboard |
+| `-ServiceName` | `CertMonitor` | Nom du service Windows |
+| `-SmtpHost/-SmtpPort/-SmtpUser/-SmtpPassword` | — | Serveur SMTP |
+| `-MailFrom/-MailTo` | — | Expéditeur / destinataires (virgules) |
+| `-AcmeEmail` | — | Compte Let's Encrypt |
+| `-AcmeChallengeMode` | `webroot` | `webroot` ou `standalone` |
+| `-AcmeWebroot` | `C:\inetpub\wwwroot` | Racine du site IIS pour les défis |
+| `-AcmePfxPassword` | aléatoire | Mot de passe PFX (généré si omis) |
+| `-RenewBeforeDays` | `30` | Renouvellement auto à J-N |
+| `-AcmeStaging` | off | Utilise le staging Let's Encrypt (tests) |
+| `-Force` | off | Écrase le `.env` existant |
+| `-Uninstall` | — | Supprime le service / la tâche planifiée |
+
+Exemples :
+
+```powershell
+# Réinstallation avec nouveau .env
+.\install.ps1 -Force -SmtpHost smtp.exemple.com -MailTo admin@exemple.com -AcmeEmail admin@exemple.com
+
+# Désinstallation
+.\install.ps1 -Uninstall
+```
+
+Le process doit tourner avec des droits suffisants pour `Import-PfxCertificate` et `WebAdministration` (le service est installé en LOCAL SYSTEM via NSSM).
 
 ## Configuration (`.env`)
 

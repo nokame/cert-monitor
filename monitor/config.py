@@ -5,7 +5,7 @@ def load_config():
     env = {}
     env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     if os.path.exists(env_file):
-        with open(env_file, encoding="utf-8") as fh:
+        with open(env_file, encoding="utf-8-sig") as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
