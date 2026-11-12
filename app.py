@@ -4,7 +4,7 @@ import sqlite3
 
 from flask import Flask, g, jsonify, render_template, request
 
-from monitor import certchecker
+from monitor import certchecker, renewals
 from monitor.config import load_config
 from monitor.mailer import Mailer
 from monitor.scheduler import Scheduler
@@ -67,6 +67,21 @@ def init_db():
             sent_at TEXT NOT NULL DEFAULT (datetime('now')),
             days_left_at_send INTEGER NOT NULL,
             UNIQUE(site_id, threshold_days)
+        );
+
+        CREATE TABLE IF NOT EXISTS renewal_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain TEXT NOT NULL,
+            san TEXT NOT NULL DEFAULT '',
+            iis_site TEXT NOT NULL DEFAULT '',
+            challenge_mode TEXT NOT NULL DEFAULT 'webroot',
+            webroot TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            status TEXT,
+            last_run_at TEXT,
+            cert_not_after TEXT,
+            days_left INTEGER,
+            log TEXT
         );
         """
     )
@@ -191,6 +206,109 @@ def check_all():
     return jsonify({"checked": len(results), "results": results})
 
 
+@app.get("/api/renewals")
+def list_renewals():
+    rows = get_db().execute(
+        "SELECT * FROM renewal_tasks ORDER BY"
+        " CASE WHEN status = 'error' THEN 0 WHEN status = 'renewed' THEN 1 ELSE 2 END, domain"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.post("/api/renewals")
+def create_renewal():
+    data = request.get_json(silent=True) or {}
+    domain = (data.get("domain") or "").strip().lower().replace("https://", "").rstrip("/")
+    if not domain:
+        return jsonify({"error": "Domaine obligatoire."}), 400
+    mode = data.get("challenge_mode") or config["acme_challenge_mode"]
+    if mode not in ("webroot", "standalone"):
+        return jsonify({"error": "Mode de défi invalide (webroot ou standalone)."}), 400
+    db = get_db()
+    cur = db.execute(
+        "INSERT INTO renewal_tasks (domain, san, iis_site, challenge_mode, webroot, enabled)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            domain,
+            (data.get("san") or "").strip(),
+            (data.get("iis_site") or "").strip(),
+            mode,
+            (data.get("webroot") or "").strip(),
+            1 if data.get("enabled", True) else 0,
+        ),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM renewal_tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify(dict(row)), 201
+
+
+@app.put("/api/renewals/<int:task_id>")
+def update_renewal(task_id):
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM renewal_tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "Tâche introuvable."}), 404
+    domain = (data.get("domain") or row["domain"]).strip().lower()
+    mode = data.get("challenge_mode") or row["challenge_mode"]
+    if mode not in ("webroot", "standalone"):
+        return jsonify({"error": "Mode de défi invalide."}), 400
+    db.execute(
+        "UPDATE renewal_tasks SET domain = ?, san = ?, iis_site = ?, challenge_mode = ?,"
+        " webroot = ?, enabled = ? WHERE id = ?",
+        (
+            domain,
+            (data.get("san", row["san"]) or "").strip(),
+            (data.get("iis_site", row["iis_site"]) or "").strip(),
+            mode,
+            (data.get("webroot", row["webroot"]) or "").strip(),
+            1 if data.get("enabled", bool(row["enabled"])) else 0,
+            task_id,
+        ),
+    )
+    db.commit()
+    updated = db.execute("SELECT * FROM renewal_tasks WHERE id = ?", (task_id,)).fetchone()
+    return jsonify(dict(updated))
+
+
+@app.delete("/api/renewals/<int:task_id>")
+def delete_renewal(task_id):
+    db = get_db()
+    cur = db.execute("DELETE FROM renewal_tasks WHERE id = ?", (task_id,))
+    db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"error": "Tâche introuvable."}), 404
+    return jsonify({"ok": True})
+
+
+@app.post("/api/renewals/<int:task_id>/renew")
+def renew_now(task_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM renewal_tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "Tâche introuvable."}), 404
+    result = renewals.run_task(db, config, dict(row), force=True)
+    db.commit()
+    updated = db.execute("SELECT * FROM renewal_tasks WHERE id = ?", (task_id,)).fetchone()
+    return jsonify({"result": result, "task": dict(updated)})
+
+
+@app.post("/api/renewals/run-due")
+def run_due_renewals():
+    db = get_db()
+    results = renewals.run_due(db, config, force=False)
+    db.commit()
+    return jsonify({"ran": len(results), "results": results})
+
+
+@app.get("/api/renewals/<int:task_id>/log")
+def renewal_log(task_id):
+    row = get_db().execute("SELECT log, last_run_at FROM renewal_tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        return jsonify({"error": "Tâche introuvable."}), 404
+    return jsonify({"log": row["log"] or "", "last_run_at": row["last_run_at"]})
+
+
 @app.get("/api/config")
 def get_config():
     return jsonify(
@@ -200,6 +318,11 @@ def get_config():
             "notify_days": config["notify_days"],
             "check_interval_hours": config["check_interval_hours"],
             "mail_configured": mailer.is_configured(),
+            "renew_before_days": config["renew_before_days"],
+            "acme_directory_url": config["acme_directory_url"],
+            "acme_email": config["acme_email"],
+            "acme_challenge_mode": config["acme_challenge_mode"],
+            "platform_windows": renewals.iis.is_windows(),
         }
     )
 

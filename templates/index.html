@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Surveillance des certificats HTTPS</title>
+<title>Cert Monitor v2 — Certificats & ACME</title>
 <style>
   :root {
     --bg: #f4f6f9; --card: #ffffff; --text: #1f2937; --muted: #6b7280;
@@ -12,119 +12,165 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
-  header { background: #111827; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-  header h1 { font-size: 20px; font-weight: 600; }
-  header .actions { display: flex; gap: 10px; align-items: center; }
+  header { background: #111827; color: #fff; padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  header h1 { font-size: 19px; font-weight: 600; }
+  header .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .btn { border: none; border-radius: 6px; padding: 9px 16px; font-size: 14px; cursor: pointer; font-weight: 500; }
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:hover { background: var(--primary-dark); }
   .btn-secondary { background: #374151; color: #fff; }
   .btn-secondary:hover { background: #4b5563; }
-  .btn-ghost { background: transparent; color: #d1d5db; }
-  main { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+  .btn-danger { background: var(--critical); color: #fff; }
+  nav.tabs { background: #1f2937; display: flex; gap: 4px; padding: 0 32px; }
+  nav.tabs button { background: transparent; border: none; color: #9ca3af; padding: 12px 18px; font-size: 14px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; }
+  nav.tabs button.active { color: #fff; border-bottom-color: var(--primary); }
+  main { max-width: 1150px; margin: 24px auto; padding: 0 16px; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
   .stat { background: var(--card); border-radius: 10px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .stat .value { font-size: 28px; font-weight: 700; }
+  .stat .value { font-size: 26px; font-weight: 700; }
   .stat .label { font-size: 13px; color: var(--muted); margin-top: 2px; }
   .card { background: var(--card); border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; }
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; font-size: 12px; text-transform: uppercase; color: var(--muted); padding: 12px 16px; border-bottom: 1px solid #e5e7eb; background: #fafafa; }
-  td { padding: 14px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; vertical-align: middle; }
+  td { padding: 13px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: #f9fafb; }
   .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; }
-  .badge.ok { background: var(--ok); } .badge.warning { background: var(--warning); }
-  .badge.critical { background: var(--critical); } .badge.expired { background: var(--expired); }
-  .badge.error { background: var(--error); } .badge.pending { background: #9ca3af; }
+  .badge.ok, .badge.up_to_date, .badge.renewed { background: var(--ok); }
+  .badge.warning { background: var(--warning); }
+  .badge.critical { background: var(--critical); }
+  .badge.expired { background: var(--expired); }
+  .badge.error { background: var(--error); }
+  .badge.pending { background: #9ca3af; }
   .badge.disabled { background: #d1d5db; color: #4b5563; }
   .row-actions { display: flex; gap: 6px; }
   .icon-btn { border: none; background: transparent; cursor: pointer; font-size: 16px; padding: 4px 6px; border-radius: 4px; }
   .icon-btn:hover { background: #e5e7eb; }
   .muted { color: var(--muted); font-size: 13px; }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
-  dialog { border: none; border-radius: 12px; padding: 0; width: 420px; max-width: 92vw; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  .section { display: none; } .section.active { display: block; }
+  .note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  dialog { border: none; border-radius: 12px; padding: 0; width: 460px; max-width: 92vw; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  dialog.log-dialog { width: 640px; }
   dialog::backdrop { background: rgba(0,0,0,.45); }
   .modal-head { padding: 18px 22px; font-size: 17px; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-  .modal-body { padding: 20px 22px; }
+  .modal-body { padding: 20px 22px; max-height: 60vh; overflow: auto; }
   .field { margin-bottom: 14px; }
   .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
-  .field input[type=text], .field input[type=number] { width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-  .field input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+  .field input[type=text], .field input[type=number], .field select { width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; font-family: inherit; }
+  .field input:focus, .field select:focus { outline: 2px solid var(--primary); border-color: transparent; }
+  .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .checkbox { display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .modal-foot { padding: 14px 22px 20px; display: flex; justify-content: flex-end; gap: 10px; }
   .error-msg { color: var(--critical); font-size: 13px; margin-bottom: 12px; display: none; }
-  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  pre#log-content { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 14px; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; max-height: 55vh; overflow: auto; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50; }
   #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🔒 Surveillance des certificats HTTPS</h1>
+  <h1>🔒 Cert Monitor <span style="color:#60a5fa;">v2</span> — certificats &amp; renouvellements ACME</h1>
   <div class="actions">
     <span class="muted" id="mail-status" style="color:#9ca3af;"></span>
     <button class="btn btn-secondary" id="btn-check-all">Vérifier tout</button>
     <button class="btn btn-primary" id="btn-add">+ Ajouter un site</button>
   </div>
 </header>
+<nav class="tabs">
+  <button class="active" data-tab="sites">Sites surveillés</button>
+  <button data-tab="renewals">Renouvellements ACME</button>
+</nav>
 <main>
-  <div class="stats" id="stats"></div>
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
+  <section class="section active" id="tab-sites">
+    <div class="stats" id="stats"></div>
+    <div class="card">
+      <table>
+        <thead><tr>
           <th>Site</th><th>Statut</th><th>Jours restants</th><th>Expiration</th><th>Dernière vérif.</th><th style="width:140px;">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="sites-body"></tbody>
-    </table>
-    <div class="empty" id="empty" style="display:none;">Aucun site surveillé. Cliquez sur « Ajouter un site » pour commencer.</div>
-  </div>
+        </tr></thead>
+        <tbody id="sites-body"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none;">Aucun site surveillé. Cliquez sur « Ajouter un site » pour commencer.</div>
+    </div>
+  </section>
+
+  <section class="section" id="tab-renewals">
+    <div class="note" id="acme-note"></div>
+    <div class="stats" id="renew-stats"></div>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>Domaine</th><th>Défi</th><th>Statut</th><th>Expiration</th><th>Dernière exécution</th><th style="width:170px;">Actions</th>
+        </tr></thead>
+        <tbody id="renewals-body"></tbody>
+      </table>
+      <div class="empty" id="renew-empty" style="display:none;">Aucune tâche de renouvellement. Ajoutez un domaine à renouveler automatiquement via Let's Encrypt.</div>
+    </div>
+  </section>
 </main>
 
 <dialog id="site-dialog">
-  <form id="site-form" method="dialog">
+  <form id="site-form">
     <div class="modal-head" id="dialog-title">Ajouter un site</div>
     <div class="modal-body">
       <div class="error-msg" id="form-error"></div>
       <input type="hidden" id="f-id">
-      <div class="field">
-        <label for="f-name">Nom</label>
-        <input type="text" id="f-name" placeholder="Mon site" required>
-      </div>
-      <div class="field">
-        <label for="f-host">Hôte (domaine)</label>
-        <input type="text" id="f-host" placeholder="exemple.com" required>
-      </div>
-      <div class="field">
-        <label for="f-port">Port</label>
-        <input type="number" id="f-port" value="443" min="1" max="65535" required>
-      </div>
-      <div class="field checkbox">
-        <input type="checkbox" id="f-enabled" checked>
-        <label for="f-enabled" style="margin:0;">Surveillance active</label>
-      </div>
+      <div class="field"><label for="f-name">Nom</label><input type="text" id="f-name" placeholder="Mon site" required></div>
+      <div class="field"><label for="f-host">Hôte (domaine)</label><input type="text" id="f-host" placeholder="exemple.com" required></div>
+      <div class="field"><label for="f-port">Port</label><input type="number" id="f-port" value="443" min="1" max="65535" required></div>
+      <div class="field checkbox"><input type="checkbox" id="f-enabled" checked><label for="f-enabled" style="margin:0;">Surveillance active</label></div>
     </div>
     <div class="modal-foot">
       <button type="button" class="btn btn-secondary" id="btn-cancel" style="background:#e5e7eb;color:#374151;">Annuler</button>
-      <button type="submit" class="btn btn-primary" id="btn-save">Enregistrer</button>
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="renew-dialog">
+  <form id="renew-form">
+    <div class="modal-head" id="renew-dialog-title">Ajouter une tâche de renouvellement</div>
+    <div class="modal-body">
+      <div class="error-msg" id="renew-error"></div>
+      <input type="hidden" id="r-id">
+      <div class="field"><label for="r-domain">Domaine (CN principal)</label><input type="text" id="r-domain" placeholder="www.exemple.com" required></div>
+      <div class="field"><label for="r-san">SAN supplémentaires</label><input type="text" id="r-san" placeholder="exemple.com, api.exemple.com"><div class="hint">Séparés par des virgules. Le domaine principal est toujours inclus.</div></div>
+      <div class="field"><label for="r-mode">Mode de défi http-01</label>
+        <select id="r-mode">
+          <option value="webroot">webroot (IIS sert le fichier — recommandé)</option>
+          <option value="standalone">standalone (port 80, IIS à l'arrêt)</option>
+        </select>
+      </div>
+      <div class="field" id="r-webroot-field"><label for="r-webroot">Répertoire racine du site IIS (webroot)</label><input type="text" id="r-webroot" placeholder="C:\inetpub\wwwroot"><div class="hint">Le fichier de défi sera écrit dans &lt;webroot&gt;\.well-known\acme-challenge\</div></div>
+      <div class="field"><label for="r-iis">Nom du site IIS (installation automatique)</label><input type="text" id="r-iis" placeholder="Default Web Site"><div class="hint">Laisser vide pour exporter uniquement les fichiers (.pem/.key/.pfx).</div></div>
+      <div class="field checkbox"><input type="checkbox" id="r-enabled" checked><label for="r-enabled" style="margin:0;">Tâche active</label></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-secondary" id="r-cancel" style="background:#e5e7eb;color:#374151;">Annuler</button>
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="log-dialog" class="log-dialog">
+  <div class="modal-head">Journal de renouvellement <span class="muted" id="log-run"></span></div>
+  <div class="modal-body"><pre id="log-content"></pre></div>
+  <div class="modal-foot"><button type="button" class="btn btn-primary" id="log-close">Fermer</button></div>
 </dialog>
 
 <div id="toast"></div>
 
 <script>
 const STATUS_LABELS = {
-  ok: 'OK', warning: 'Attention', critical: 'Critique',
-  expired: 'Expiré', error: 'Erreur', pending: 'En attente', disabled: 'Désactivé'
+  ok: 'OK', warning: 'Attention', critical: 'Critique', expired: 'Expiré',
+  error: 'Erreur', pending: 'En attente', disabled: 'Désactivé',
+  up_to_date: 'À jour', renewed: 'Renouvelé'
 };
-let sites = [];
+let sites = [], renewals = [], cfg = {};
 
 async function api(url, options = {}) {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
+  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Erreur serveur');
   return data;
@@ -132,17 +178,27 @@ async function api(url, options = {}) {
 
 function toast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s ?? '';
-  return d.innerHTML;
+function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function colorFor(status) {
+  return { ok:'var(--ok)', up_to_date:'var(--ok)', renewed:'var(--ok)', warning:'var(--warning)',
+           critical:'var(--critical)', expired:'var(--expired)', error:'var(--error)' }[status] || 'var(--muted)';
 }
 
+/* ---------- Onglets ---------- */
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ---------- Sites surveillés ---------- */
 function renderStats() {
   const active = sites.filter(s => s.enabled);
   const count = st => active.filter(s => s.last_status === st).length;
@@ -163,8 +219,7 @@ function renderSites() {
   for (const s of sites) {
     const status = s.enabled ? (s.last_status || 'pending') : 'disabled';
     const days = s.last_days_left;
-    const daysCell = days === null || days === undefined
-      ? '<span class="muted">—</span>'
+    const daysCell = days === null || days === undefined ? '<span class="muted">—</span>'
       : `<b style="color:${colorFor(status)}">${days} j</b>`;
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -183,22 +238,6 @@ function renderSites() {
   renderStats();
 }
 
-function colorFor(status) {
-  return { ok: 'var(--ok)', warning: 'var(--warning)', critical: 'var(--critical)',
-           expired: 'var(--expired)', error: 'var(--error)' }[status] || 'var(--muted)';
-}
-
-async function load() {
-  try {
-    [sites, cfg] = await Promise.all([api('/api/sites'), api('/api/config')]);
-    document.getElementById('mail-status').textContent = cfg.mail_configured
-      ? '✉ Notifications e-mail activées' : '✉ E-mail non configuré (voir .env)';
-    renderSites();
-  } catch (e) {
-    toast('Impossible de charger les sites : ' + e.message);
-  }
-}
-
 const dialog = document.getElementById('site-dialog');
 const form = document.getElementById('site-form');
 
@@ -208,32 +247,20 @@ function openAdd() {
   document.getElementById('f-port').value = 443;
   document.getElementById('f-enabled').checked = true;
   document.getElementById('dialog-title').textContent = 'Ajouter un site';
-  hideError();
+  document.getElementById('form-error').style.display = 'none';
   dialog.showModal();
 }
-
 function openEdit(id) {
-  const s = sites.find(x => x.id === id);
-  if (!s) return;
+  const s = sites.find(x => x.id === id); if (!s) return;
   document.getElementById('f-id').value = s.id;
   document.getElementById('f-name').value = s.name;
   document.getElementById('f-host').value = s.host;
   document.getElementById('f-port').value = s.port;
   document.getElementById('f-enabled').checked = !!s.enabled;
   document.getElementById('dialog-title').textContent = 'Modifier le site';
-  hideError();
+  document.getElementById('form-error').style.display = 'none';
   dialog.showModal();
 }
-
-function showError(msg) {
-  const el = document.getElementById('form-error');
-  el.textContent = msg;
-  el.style.display = 'block';
-}
-function hideError() {
-  document.getElementById('form-error').style.display = 'none';
-}
-
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = document.getElementById('f-id').value;
@@ -244,54 +271,165 @@ form.addEventListener('submit', async (e) => {
     enabled: document.getElementById('f-enabled').checked
   };
   try {
-    if (id) {
-      await api(`/api/sites/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-      toast('Site modifié.');
-    } else {
-      await api('/api/sites', { method: 'POST', body: JSON.stringify(payload) });
-      toast('Site ajouté.');
-    }
-    dialog.close();
-    await load();
-  } catch (err) {
-    showError(err.message);
-  }
+    if (id) { await api(`/api/sites/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); toast('Site modifié.'); }
+    else { await api('/api/sites', { method: 'POST', body: JSON.stringify(payload) }); toast('Site ajouté.'); }
+    dialog.close(); await load();
+  } catch (err) { document.getElementById('form-error').textContent = err.message; document.getElementById('form-error').style.display = 'block'; }
 });
-
 document.getElementById('btn-add').addEventListener('click', openAdd);
 document.getElementById('btn-cancel').addEventListener('click', () => dialog.close());
 
 async function removeSite(id, name) {
   if (!confirm(`Supprimer « ${name} » de la surveillance ?`)) return;
-  try {
-    await api(`/api/sites/${id}`, { method: 'DELETE' });
-    toast('Site supprimé.');
-    await load();
-  } catch (e) {
-    toast(e.message);
-  }
+  try { await api(`/api/sites/${id}`, { method: 'DELETE' }); toast('Site supprimé.'); await load(); }
+  catch (e) { toast(e.message); }
 }
-
 async function checkSite(id) {
   toast('Vérification en cours…');
-  try {
-    await api(`/api/sites/${id}/check`, { method: 'POST' });
-    await load();
-  } catch (e) {
-    toast(e.message);
+  try { await api(`/api/sites/${id}/check`, { method: 'POST' }); await load(); }
+  catch (e) { toast(e.message); }
+}
+document.getElementById('btn-check-all').addEventListener('click', async () => {
+  toast('Vérification de tous les sites…');
+  try { await api('/api/check-all', { method: 'POST' }); await load(); toast('Vérification terminée.'); }
+  catch (e) { toast(e.message); }
+});
+
+/* ---------- Renouvellements ACME ---------- */
+const RENEW_STATUS = { up_to_date:'À jour', renewed:'Renouvelé', error:'Erreur', pending:'En attente' };
+
+function renderRenewals() {
+  const tbody = document.getElementById('renewals-body');
+  const empty = document.getElementById('renew-empty');
+  tbody.innerHTML = '';
+  empty.style.display = renewals.length ? 'none' : 'block';
+  const active = renewals.filter(t => t.enabled);
+  const count = st => active.filter(t => t.status === st).length;
+  document.getElementById('renew-stats').innerHTML = `
+    <div class="stat"><div class="value">${active.length}</div><div class="label">Tâches actives</div></div>
+    <div class="stat"><div class="value" style="color:var(--ok)">${count('up_to_date') + count('renewed')}</div><div class="label">À jour</div></div>
+    <div class="stat"><div class="value" style="color:var(--error)">${count('error')}</div><div class="label">Erreurs</div></div>
+    <div class="stat"><div class="value">${cfg.renew_before_days ?? '—'}</div><div class="label">Renouvellement à J-…</div></div>`;
+  for (const t of renewals) {
+    const status = t.enabled ? (t.status || 'pending') : 'disabled';
+    const days = t.days_left;
+    const daysCell = days === null || days === undefined ? '<span class="muted">—</span>'
+      : `<b style="color:${colorFor(status)}">${days} j</b>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><b>${esc(t.domain)}</b><br><span class="muted">${t.san ? 'SAN : ' + esc(t.san) : ''}${t.iis_site ? '<br>IIS : ' + esc(t.iis_site) : ''}</span></td>
+      <td class="muted">${t.challenge_mode === 'standalone' ? 'standalone :80' : 'webroot'}</td>
+      <td><span class="badge ${status}">${RENEW_STATUS[status] || status}</span></td>
+      <td>${t.cert_not_after ? esc(t.cert_not_after) : '<span class="muted">—</span>'}${t.cert_not_after ? ' ' + daysCell : ''}</td>
+      <td class="muted">${t.last_run_at ? esc(t.last_run_at) + ' UTC' : 'jamais'}</td>
+      <td><div class="row-actions">
+        <button class="icon-btn" title="Journal" onclick="showLog(${t.id})">📜</button>
+        <button class="icon-btn" title="Renouveler maintenant" onclick="renewNow(${t.id})">⚡</button>
+        <button class="icon-btn" title="Modifier" onclick="openRenewEdit(${t.id})">✏️</button>
+        <button class="icon-btn" title="Supprimer" onclick="removeRenewal(${t.id}, '${esc(t.domain).replace(/'/g, "\\'")}')">🗑️</button>
+      </div></td>`;
+    tbody.appendChild(tr);
   }
 }
 
-document.getElementById('btn-check-all').addEventListener('click', async () => {
-  toast('Vérification de tous les sites…');
+const renewDialog = document.getElementById('renew-dialog');
+const renewForm = document.getElementById('renew-form');
+
+function openRenewAdd() {
+  renewForm.reset();
+  document.getElementById('r-id').value = '';
+  document.getElementById('r-enabled').checked = true;
+  document.getElementById('r-mode').value = cfg.acme_challenge_mode || 'webroot';
+  document.getElementById('r-webroot').value = '';
+  document.getElementById('renew-dialog-title').textContent = 'Ajouter une tâche de renouvellement';
+  document.getElementById('renew-error').style.display = 'none';
+  toggleWebroot();
+  renewDialog.showModal();
+}
+function openRenewEdit(id) {
+  const t = renewals.find(x => x.id === id); if (!t) return;
+  document.getElementById('r-id').value = t.id;
+  document.getElementById('r-domain').value = t.domain;
+  document.getElementById('r-san').value = t.san || '';
+  document.getElementById('r-mode').value = t.challenge_mode;
+  document.getElementById('r-webroot').value = t.webroot || '';
+  document.getElementById('r-iis').value = t.iis_site || '';
+  document.getElementById('r-enabled').checked = !!t.enabled;
+  document.getElementById('renew-dialog-title').textContent = 'Modifier la tâche de renouvellement';
+  document.getElementById('renew-error').style.display = 'none';
+  toggleWebroot();
+  renewDialog.showModal();
+}
+function toggleWebroot() {
+  document.getElementById('r-webroot-field').style.display =
+    document.getElementById('r-mode').value === 'webroot' ? 'block' : 'none';
+}
+document.getElementById('r-mode').addEventListener('change', toggleWebroot);
+
+renewForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('r-id').value;
+  const payload = {
+    domain: document.getElementById('r-domain').value.trim(),
+    san: document.getElementById('r-san').value.trim(),
+    challenge_mode: document.getElementById('r-mode').value,
+    webroot: document.getElementById('r-webroot').value.trim(),
+    iis_site: document.getElementById('r-iis').value.trim(),
+    enabled: document.getElementById('r-enabled').checked
+  };
   try {
-    await api('/api/check-all', { method: 'POST' });
-    await load();
-    toast('Vérification terminée.');
-  } catch (e) {
-    toast(e.message);
-  }
+    if (id) { await api(`/api/renewals/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); toast('Tâche modifiée.'); }
+    else { await api('/api/renewals', { method: 'POST', body: JSON.stringify(payload) }); toast('Tâche créée. Le renouvellement s\'exécutera automatiquement à J-' + (cfg.renew_before_days ?? 30) + '.'); }
+    renewDialog.close(); await load();
+  } catch (err) { document.getElementById('renew-error').textContent = err.message; document.getElementById('renew-error').style.display = 'block'; }
 });
+document.getElementById('r-cancel').addEventListener('click', () => renewDialog.close());
+
+async function removeRenewal(id, domain) {
+  if (!confirm(`Supprimer la tâche de renouvellement pour « ${domain} » ?`)) return;
+  try { await api(`/api/renewals/${id}`, { method: 'DELETE' }); toast('Tâche supprimée.'); await load(); }
+  catch (e) { toast(e.message); }
+}
+async function renewNow(id) {
+  toast('Renouvellement en cours (jusqu\'à ~1 min)…');
+  try {
+    const res = await api(`/api/renewals/${id}/renew`, { method: 'POST' });
+    await load();
+    toast(res.result.status === 'renewed' ? 'Certificat renouvelé ✅' : 'Renouvellement terminé : ' + res.result.status);
+    showLog(id);
+  } catch (e) { toast(e.message); }
+}
+async function showLog(id) {
+  try {
+    const res = await api(`/api/renewals/${id}/log`);
+    document.getElementById('log-content').textContent = res.log || 'Aucun journal pour le moment.';
+    document.getElementById('log-run').textContent = res.last_run_at ? '— ' + res.last_run_at + ' UTC' : '';
+    document.getElementById('log-dialog').showModal();
+  } catch (e) { toast(e.message); }
+}
+document.getElementById('log-close').addEventListener('click', () => document.getElementById('log-dialog').close());
+
+/* ---------- Chargement ---------- */
+async function load() {
+  try {
+    [sites, renewals, cfg] = await Promise.all([
+      api('/api/sites'), api('/api/renewals'), api('/api/config')
+    ]);
+    document.getElementById('mail-status').textContent = cfg.mail_configured
+      ? '✉ Notifications e-mail activées' : '✉ E-mail non configuré (voir .env)';
+    const env = [];
+    env.push('Serveur ACME : <b>' + esc(cfg.acme_directory_url) + '</b>');
+    env.push(cfg.acme_email ? 'Compte : ' + esc(cfg.acme_email) : 'Compte : non configuré (ACME_EMAIL)');
+    env.push(cfg.platform_windows
+      ? '✅ Windows détecté — installation IIS disponible'
+      : '⚠ Hôte non-Windows — les certificats sont exportés en fichiers (.pem/.key/.pfx), installation IIS ignorée');
+    document.getElementById('acme-note').innerHTML = env.join(' · ');
+    renderSites();
+    renderRenewals();
+  } catch (e) {
+    toast('Impossible de charger les données : ' + e.message);
+  }
+}
 
 load();
 setInterval(load, 60000);

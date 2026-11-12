@@ -44,4 +44,12 @@ class Scheduler:
             certchecker.save_result(db, row["id"], result, self.config)
             certchecker.evaluate_and_notify(db, self.config, self.mailer, row["id"], result)
         db.commit()
+
+        from . import renewals
+
+        try:
+            renewals.run_due(db, self.config, force=False)
+            db.commit()
+        except Exception:
+            pass
         db.close()

@@ -43,4 +43,13 @@ def load_config():
         "mail_from": get("MAIL_FROM"),
         "mail_to": [a.strip() for a in str(get("MAIL_TO", "")).split(",") if a.strip()],
         "base_url": get("BASE_URL", "http://localhost:5000"),
+        "acme_directory_url": get("ACME_DIRECTORY_URL", "https://acme-v02.api.letsencrypt.org/directory"),
+        "acme_email": get("ACME_EMAIL"),
+        "acme_account_key_path": get("ACME_ACCOUNT_KEY_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "acme_account.key")),
+        "acme_output_dir": get("ACME_OUTPUT_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "certs")),
+        "acme_challenge_mode": get("ACME_CHALLENGE_MODE", "webroot"),
+        "acme_webroot": get("ACME_WEBROOT"),
+        "acme_standalone_port": get_int("ACME_STANDALONE_PORT", 80),
+        "acme_pfx_password": get("ACME_PFX_PASSWORD", "cert-monitor"),
+        "renew_before_days": get_int("RENEW_BEFORE_DAYS", 30),
     }
