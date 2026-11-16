@@ -9,9 +9,14 @@
 #     --mail-from alertes@exemple.com --mail-to "admin@exemple.com" \
 #     --acme-email admin@exemple.com --acme-staging
 #
+# Écoute réseau : par défaut le dashboard écoute sur 0.0.0.0 (réseau local).
+# Derrière un vhost nginx local, préférez : --bind 127.0.0.1 puis dans le vhost :
+#     proxy_pass http://127.0.0.1:5000;
+#
 #   sudo ./install-debian.sh --uninstall
 # ============================================================================
 set -euo pipefail
+trap 'c_err "Échec de la commande à la ligne $LINENO (voir le message ci-dessus)."' ERR
 
 # --- Défauts -----------------------------------------------------------------
 INSTALL_DIR="/opt/cert-monitor"
@@ -61,6 +66,7 @@ while [ $# -gt 0 ]; do
         --user)                 APP_USER="$2"; shift 2 ;;
         --service-name)         SERVICE_NAME="$2"; shift 2 ;;
         --port)                 PORT="$2"; shift 2 ;;
+        --bind)                 BIND_HOST="$2"; shift 2 ;;
         --smtp-host)            SMTP_HOST="$2"; shift 2 ;;
         --smtp-port)            SMTP_PORT="$2"; shift 2 ;;
         --smtp-user)            SMTP_USER="$2"; shift 2 ;;
@@ -111,6 +117,7 @@ else
     c_warn "/etc/os-release introuvable : distribution non vérifiée."
 fi
 
+BIND_HOST="0.0.0.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$SCRIPT_DIR/app.py" ] || c_err "Lancez ce script depuis le dossier du projet (app.py introuvable à côté de install-debian.sh)."
 
@@ -149,7 +156,8 @@ if [ -f "$ENV_FILE" ] && [ "$FORCE" -ne 1 ]; then
     c_warn ".env existe déjà, conservé (utilisez --force pour l'écraser)."
 else
     if [ -z "$ACME_PFX_PASSWORD" ]; then
-        ACME_PFX_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+        PW="$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+        ACME_PFX_PASSWORD="${PW:0:24}"
         echo "    Mot de passe PFX généré aléatoirement."
     fi
     if [ "$ACME_STAGING" -eq 1 ]; then
@@ -184,6 +192,11 @@ ACME_STANDALONE_PORT=$ACME_STANDALONE_PORT
 ACME_PFX_PASSWORD=$ACME_PFX_PASSWORD
 RENEW_BEFORE_DAYS=$RENEW_BEFORE_DAYS
 
+# --- Écoute réseau ---
+# 127.0.0.1 = accès via le vhost nginx (recommandé) ; 0.0.0.0 = accès direct réseau local
+BIND_HOST=$BIND_HOST
+BIND_PORT=$PORT
+
 BASE_URL=http://localhost:$PORT
 EOF
     c_ok ".env généré : $ENV_FILE"
@@ -194,7 +207,9 @@ chmod 700 "$INSTALL_DIR/data" 2>/dev/null || true
 
 # --- Pare-feu ----------------------------------------------------------------
 c_info "Pare-feu"
-if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+if [ "$BIND_HOST" = "127.0.0.1" ]; then
+    c_ok "Écoute sur 127.0.0.1:$PORT uniquement : pas d'ouverture de port (accès via le vhost nginx)."
+elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
     ufw allow "$PORT/tcp" >/dev/null
     c_ok "Port $PORT ouvert via ufw"
 elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
@@ -234,8 +249,12 @@ ReadWritePaths=$INSTALL_DIR
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable --now "$SERVICE_NAME" >/dev/null 2>&1
-c_ok "Service installé et démarré ($(systemctl is-active "$SERVICE_NAME"))"
+systemctl enable "$SERVICE_NAME" >/dev/null 2>&1 || true
+if systemctl restart "$SERVICE_NAME"; then
+    c_ok "Service installé et démarré ($(systemctl is-active "$SERVICE_NAME"))"
+else
+    c_warn "Le service n'a pas démarré : journalctl -u $SERVICE_NAME -e"
+fi
 
 # --- Test de santé -----------------------------------------------------------
 c_info "Test de santé"
@@ -255,7 +274,7 @@ fi
 
 echo ""
 echo "================= INSTALLATION TERMINÉE ================="
-echo " Dashboard      : http://localhost:$PORT"
+echo " Dashboard      : http://$BIND_HOST:$PORT (vhost nginx : proxy_pass http://$BIND_HOST:$PORT)"
 echo " Dossier        : $INSTALL_DIR"
 echo " Configuration  : $ENV_FILE"
 echo " Logs           : $INSTALL_DIR/logs/ et journalctl -u $SERVICE_NAME"

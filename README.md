@@ -103,6 +103,29 @@ Le process doit tourner avec des droits suffisants pour `Import-PfxCertificate` 
 | `RENEW_BEFORE_DAYS` | `30` | Renouvellement auto quand il reste ≤ N jours |
 | `ACME_OUTPUT_DIR` | `data/certs` | Export `.pem` / `.key` / `.pfx` |
 
+### Sur Debian 13 (trixie) — dashboard uniquement
+
+```bash
+sudo ./install-debian.sh \
+  --smtp-host smtp.exemple.com --smtp-port 587 \
+  --smtp-user alertes@exemple.com --smtp-password "xxx" \
+  --mail-from alertes@exemple.com --mail-to "admin@exemple.com" \
+  --acme-email admin@exemple.com \
+  --acme-staging
+```
+
+Le script est **one-shot** : paquets système, utilisateur dédié `certmonitor`, venv, `.env` généré depuis les arguments, pare-feu, **service systemd** durci (redémarrage auto) et test de santé.
+
+**Écoute réseau** : par défaut le dashboard écoute sur `0.0.0.0:5000` (accessible depuis le réseau local, port ouvert dans le pare-feu si ufw/firewalld actifs). Derrière un vhost **nginx** déjà configuré, ajoutez `--bind 127.0.0.1` et utilisez dans le vhost :
+
+```nginx
+proxy_pass http://127.0.0.1:5000;
+```
+
+L'adresse d'écoute est modifiable après coup dans le `.env` (`BIND_HOST`, `BIND_PORT`) puis `sudo systemctl restart cert-monitor`.
+
+Options : `--uninstall`, `--force`, `--port`, `--bind`, `--install-dir`, `--user`, `--service-name`, `--acme-staging`.
+
 ## Fonctionnement
 
 ### Renouvellement automatique

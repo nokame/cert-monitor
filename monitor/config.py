@@ -52,4 +52,6 @@ def load_config():
         "acme_standalone_port": get_int("ACME_STANDALONE_PORT", 80),
         "acme_pfx_password": get("ACME_PFX_PASSWORD", "cert-monitor"),
         "renew_before_days": get_int("RENEW_BEFORE_DAYS", 30),
+        "bind_host": get("BIND_HOST", "0.0.0.0"),
+        "bind_port": get_int("BIND_PORT", 5000),
     }
